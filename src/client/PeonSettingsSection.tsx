@@ -170,6 +170,18 @@ export function PeonSettingsSection(props: PeonSectionProps): ReactNode {
   }
 
   const trigger = (action: string): void => {
+    if (action === "preview") {
+      try {
+        const pack = value?.default_pack || "peon"
+        const audio = new Audio(`/peon/api/audio/session.start?pack=${encodeURIComponent(pack)}&t=${Date.now()}`)
+        audio.volume = typeof value?.volume === "number" ? value.volume : 1
+        audio.play().catch((e) => {
+          console.warn("[dsh-reminder] Web Audio preview failed:", e)
+        })
+      } catch (err) {
+        console.warn("[dsh-reminder] new Audio error:", err)
+      }
+    }
     setPending(true)
     void runAction(action).then(refresh).catch((cause: unknown) => {
       setStatus('error')

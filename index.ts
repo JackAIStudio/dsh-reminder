@@ -23,6 +23,8 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createReadStream } from 'node:fs'
+import { extname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
 
@@ -35,7 +37,7 @@ import { ensureDirs, loadConfig, loadState, saveConfig, saveState } from './src/
 import { buildNotifyContent, extractLastAssistantText, extractToolErrorText, resolveProjectName } from './src/notify-content.ts'
 import { listPacks } from './src/packs.ts'
 import { checkRelayHealth, detectRemoteSession, getRelayUrl, relaySetupInstructions } from './src/relay.ts'
-import { previewPackSound, runInstall } from './src/ui.ts'
+import { previewPackSound, runInstall, getPackSoundFile } from './src/ui.ts'
 import {
   buildSettingsEntry,
   configFromSettings,
@@ -470,6 +472,25 @@ export function apply(ctx: Context): void {
         handler: async (req, res) => {
           if (!isTrustedRequest(req, webRuntime?.trustedHosts ?? [])) {
             writeError(res, 403, 'forbidden', 'forbidden')
+            return
+          }
+          const url = new URL(req.url ?? '/', 'http://dsh.internal')
+          if (req.method === 'GET' && url.pathname.startsWith('/peon/api/audio')) {
+            const rawCat = url.pathname.slice('/peon/api/audio'.length).replace(/^\//, '') || 'session.start'
+            const pack = url.searchParams.get('pack') || entry().default_pack || 'peon'
+            const sound = getPackSoundFile(pack, rawCat)
+            if (!sound) {
+              writeError(res, 404, 'not-found', 'sound not found')
+              return
+            }
+            const ext = extname(sound.file).toLowerCase()
+            const mime = ext === '.mp3' ? 'audio/mpeg' : ext === '.ogg' ? 'audio/ogg' : 'audio/wav'
+            res.writeHead(200, {
+              'content-type': mime,
+              'cache-control': 'no-store',
+              'access-control-allow-origin': '*',
+            })
+            createReadStream(sound.file).pipe(res)
             return
           }
           if (req.method !== 'POST') {

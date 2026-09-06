@@ -79,4 +79,24 @@ export function previewPackSound(packName: string): string | null {
   return pick.label || file;
 }
 
+
+/** Get the physical sound file path for a category in a pack. */
+export function getPackSoundFile(packName: string, category: string = "session.start"): { file: string; label: string } | null {
+  const packsDir = getPacksDir();
+  const packPath = join(packsDir, packName);
+  const manifest = loadManifest(packPath);
+  if (!manifest) return null;
+
+  const cat = manifest.categories[category] || manifest.categories["session.start"] || manifest.categories["task.complete"] || Object.values(manifest.categories)[0];
+  if (!cat?.sounds?.length) return null;
+
+  const pick = cat.sounds[Math.floor(Math.random() * cat.sounds.length)]!;
+  const file = pick.file.includes("/")
+    ? join(packPath, pick.file)
+    : join(packPath, "sounds", pick.file);
+
+  if (!existsSync(file)) return null;
+  return { file, label: pick.label || file };
+}
+
 export type { PeonConfig, PeonState };

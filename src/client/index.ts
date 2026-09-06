@@ -13,7 +13,8 @@
  * @module dsh-reminder/client
  */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import React, { useRef, useEffect } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -34,6 +35,27 @@ export const NS = 'settings.peon'
 export const inject = ['slots', 'locale']
 
 /** Contribute the peon-ping sounds settings page. */
+
+function AutoAudioListener(props: { useSession?: (selector: (s: any) => any) => any }): null {
+  const running = typeof props.useSession === "function"
+    ? props.useSession((s: any) => s?.running)
+    : false
+  const prevRunning = useRef(running)
+
+  useEffect(() => {
+    if (prevRunning.current === true && running === false) {
+      try {
+        const audio = new Audio(`/peon/api/audio/task.complete?t=${Date.now()}`)
+        audio.volume = 0.8
+        audio.play().catch(() => {})
+      } catch {}
+    }
+    prevRunning.current = running
+  }, [running])
+
+  return null
+}
+
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-reminder: copy dictionaries')
 
@@ -48,4 +70,10 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: injected,
   }, PeonSettingsSection))
+
+  ctx.slots.inject('conversation.composer.dock' as any, () => ctx.slots.register({
+    name: 'conversation.composer.dock' as any,
+    id: 'peon-ping-listener',
+    order: 100,
+  }, (props: any) => React.createElement(AutoAudioListener, props)))
 }
