@@ -1,5 +1,5 @@
 node_modules/
-lib/
 *.tsbuildinfo
 .DS_Store
+*.tgz
 scripts/spike-reload.mjs

@@ -1,0 +1,14 @@
+import type { PeonConfig, PeonState } from "./types.ts";
+export declare const DATA_DIR: string;
+export declare const PACKS_DIR: string;
+export declare const CONFIG_PATH: string;
+export declare const STATE_PATH: string;
+export declare const LEGACY_PACKS: string;
+export declare const DEFAULT_CONFIG: PeonConfig;
+export declare const DEFAULT_STATE: PeonState;
+export declare const CATEGORY_LABELS: Record<string, string>;
+export declare const VOLUME_STEPS: string[];
+export declare const REGISTRY_URL = "https://peonping.github.io/registry/index.json";
+export declare const DEFAULT_PACK_NAMES: string[];
+export declare const FALLBACK_REPO = "PeonPing/og-packs";
+export declare const FALLBACK_REF = "v1.1.0";

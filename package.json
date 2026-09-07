@@ -24,9 +24,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Victor-770/dsh-reminder.git"
+    "url": "git+https://github.com/JackAIStudio/dsh-reminder.git"
   },
-  "homepage": "https://github.com/Victor-770/dsh-reminder",
+  "homepage": "https://github.com/JackAIStudio/dsh-reminder",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "exports": {
