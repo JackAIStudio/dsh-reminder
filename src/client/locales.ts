@@ -36,7 +36,7 @@ export type PeonKey =
 export const zh: Record<PeonKey, string> = {
   nav: 'peon-ping 声音',
   title: 'peon-ping 声音通知',
-  description: '任务完成或意外终止时播放音效，并显示桌面通知。音效包与 pi 的 peon-ping 共用同一目录。',
+  description: '任务完成或意外终止时播放音效，并显示桌面通知。音效包与 pi 的 peon-ping 共用同一目录。本机 GUI（打包 App / Chrome）只走宿主扬声器，避免叠播；手机和云端页面走浏览器播放。',
   notice: '通知',
   unavailable: '无法获取配置（该命名空间未对网页客户端开放）',
   sounds: '声音',
@@ -67,7 +67,7 @@ export const zh: Record<PeonKey, string> = {
 export const en: Record<PeonKey, string> = {
   nav: 'peon-ping sounds',
   title: 'peon-ping sound notifications',
-  description: 'Plays sounds when a task completes or terminates unexpectedly, and shows desktop notifications. Sound packs are shared with the pi peon-ping.',
+  description: 'Plays sounds when a task completes or terminates unexpectedly, and shows desktop notifications. Sound packs are shared with the pi peon-ping. The local GUI (packaged app / Chrome) uses the host speakers only, so the clip is not stacked; phone and cloud pages still play in the browser.',
   notice: 'Notice',
   unavailable: 'settings unavailable (the namespace is not exposed to the web client)',
   sounds: 'Sounds',

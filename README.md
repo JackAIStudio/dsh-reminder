@@ -79,6 +79,16 @@ All settings live in the **web Settings page**: open Settings (the gear icon in 
 
 Changes are written through to `~/.config/peon-ping/config.json` immediately, so they apply to the next event without a restart. There is no `/peon` slash command — the pi TUI panel became this web page.
 
+### Where the sound actually plays
+
+A completion used to fire **twice** on a local Mac: the host process ran `afplay`, and the web GUI (packaged Chromium app **or** a Chrome tab of `127.0.0.1:3080`) also played the same clip via Web Audio. Chrome does not have its own DSH completion sound — it is the same plugin running inside that page.
+
+| GUI | Speakers |
+|-----|----------|
+| Packaged app / Chrome / Electron on `localhost` or `127.0.0.1` | **Host only** (`afplay` / `paplay` / …). Browser autoplay is skipped so the clip is not stacked. |
+| Phone, LAN IP, cloud URL (`mac.followjack.cn`, …) | **This browser** (the host machine may still beep if it has speakers). |
+| Settings → Preview | **This browser only** — the host does not also `afplay`. |
+
 > **Settings-page transport**: the page talks to the host through the plugin's own `/peon/api` HTTP route (same origin, behind the browser-trust fence), **not** through the host's settings-namespace allowlist (`dsh-host-apiproxy`'s `WEB_SETTINGS_NAMESPACES` admits only built-in namespaces; a third-party namespace is filtered from `settings.describe` even when registered). So the settings page works on dsh versions that never added `peon-ping` to that allowlist.
 
 To install specific packs from the registry directly, edit `~/.config/peon-ping/config.json` or use the registry's pack names with the page's install action (the page installs the defaults; pack names come from the [peon-ping registry](https://peonping.github.io/registry/index.json)).

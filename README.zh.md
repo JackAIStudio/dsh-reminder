@@ -80,6 +80,16 @@ dsh plugin --profile web remove dsh-reminder
 
 改动会立即写入 `~/.config/peon-ping/config.json`，下一次事件即生效，无需重启。已删除 `/peon` 斜杠命令 —— pi 的 TUI 面板改成了这个网页页面。
 
+### 声音从哪边播
+
+以前本机完成一次任务会 **叠播两遍**：宿主进程走 `afplay`，网页 GUI（打包出来的 Chromium App，或 `127.0.0.1:3080` 的 Chrome 标签）再走一遍 Web Audio。Chrome 自己并没有 DSH 完成音 —— 是同一个插件在那个页面里又播了一次。
+
+| GUI | 扬声器 |
+|-----|----------|
+| 打包 App / Chrome / Electron，地址是 `localhost` 或 `127.0.0.1` | **只走宿主**（`afplay` / `paplay` / …）。浏览器自动播放关掉，避免同一条音效叠在一起。 |
+| 手机、局域网 IP、云端网址（`mac.followjack.cn` 等） | **当前这个浏览器**（宿主机器如果有扬声器，仍可能响）。 |
+| 设置页「试听」 | **只走当前浏览器** —— 宿主不再同时 `afplay`。 |
+
 > **设置页的传输通道**：设置页通过插件自带的 `/peon/api` HTTP 路由读写配置（与网页同源，走浏览器信任篱笆），**不依赖** dsh 宿主向网页客户端暴露的设置命名空间白名单（`dsh-host-apiproxy` 的 `WEB_SETTINGS_NAMESPACES` 只放行内置 namespace，第三方插件的 namespace 即使注册成功也会被过滤）。因此本插件在未把 `peon-ping` 加入白名单的 dsh 版本上，设置页也能正常显示和操作。
 
 ## 平台支持

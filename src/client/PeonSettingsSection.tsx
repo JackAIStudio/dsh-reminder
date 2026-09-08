@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PeonKey } from './locales.ts'
+import { previewAudioUrl } from './playback-policy.ts'
 import css from './PeonSettingsSection.module.css'
 
 /** Client-side mirror of the host settings section (type-only). */
@@ -170,17 +171,22 @@ export function PeonSettingsSection(props: PeonSectionProps): ReactNode {
   }
 
   const trigger = (action: string): void => {
-    if (action === "preview") {
+    // Preview stays in this browser. Calling the host `preview` action would
+    // also `afplay` on the machine running dsh — the same clip twice when
+    // the GUI is a packaged app / Chrome tab on that machine, and a stray
+    // beep on the server when the GUI is a phone or cloud page.
+    if (action === 'preview') {
       try {
-        const pack = value?.default_pack || "peon"
-        const audio = new Audio(`/peon/api/audio/session.start?pack=${encodeURIComponent(pack)}&t=${Date.now()}`)
-        audio.volume = typeof value?.volume === "number" ? value.volume : 1
-        audio.play().catch((e) => {
-          console.warn("[dsh-reminder] Web Audio preview failed:", e)
+        const pack = value?.default_pack || 'peon'
+        const audio = new Audio(previewAudioUrl(pack))
+        audio.volume = typeof value?.volume === 'number' ? value.volume : 1
+        audio.play().catch((error) => {
+          console.warn('[dsh-reminder] Web Audio preview failed:', error)
         })
-      } catch (err) {
-        console.warn("[dsh-reminder] new Audio error:", err)
+      } catch (error) {
+        console.warn('[dsh-reminder] new Audio error:', error)
       }
+      return
     }
     setPending(true)
     void runAction(action).then(refresh).catch((cause: unknown) => {

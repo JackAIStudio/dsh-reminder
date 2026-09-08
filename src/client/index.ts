@@ -20,6 +20,41 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { PeonSettingsSection, type PeonSectionProps } from './PeonSettingsSection.tsx'
 import { en, zh, type PeonKey } from './locales.ts'
+import {
+  CLIENT_AUTOPLAY_DEBOUNCE_MS,
+  claimAutoplay,
+  clientShouldAutoPlayCompletion,
+  completionAudioUrl,
+  completionCategoryFromSnapshot,
+} from './playback-policy.ts'
+
+/** Host settings the remote autoplay path must still honour. */
+interface PeonPlaybackGate {
+  enabled?: boolean
+  paused?: boolean
+  categories?: Record<string, boolean>
+  volume?: number
+}
+
+/** True when the peon config allows this category to beep. Fail open on network errors. */
+async function remotePlaybackAllowed(category: string): Promise<{ allowed: boolean; volume: number }> {
+  try {
+    const response = await fetch('/peon/api/get', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    const parsed = (await response.json().catch(() => null)) as { ok?: boolean; value?: PeonPlaybackGate } | null
+    const value = parsed?.value
+    if (value === undefined) return { allowed: true, volume: 0.8 }
+    if (value.enabled === false || value.paused === true) return { allowed: false, volume: 0 }
+    if (value.categories?.[category] === false) return { allowed: false, volume: 0 }
+    const volume = typeof value.volume === 'number' ? value.volume : 0.8
+    return { allowed: true, volume }
+  } catch {
+    return { allowed: true, volume: 0.8 }
+  }
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -37,21 +72,36 @@ export const inject = ['slots', 'locale']
 /** Contribute the peon-ping sounds settings page. */
 
 function AutoAudioListener(props: { useSession?: (selector: (s: any) => any) => any }): null {
-  const running = typeof props.useSession === "function"
-    ? props.useSession((s: any) => s?.running)
-    : false
+  const select = typeof props.useSession === 'function' ? props.useSession : undefined
+  const running = select ? select((s: any) => s?.running) : false
+  const subagent = select ? select((s: any) => s?.subagent) : null
+  const lastAgentError = select ? select((s: any) => s?.lastAgentError) : null
   const prevRunning = useRef(running)
 
   useEffect(() => {
-    if (prevRunning.current === true && running === false) {
-      try {
-        const audio = new Audio(`/peon/api/audio/task.complete?t=${Date.now()}`)
-        audio.volume = 0.8
-        audio.play().catch(() => {})
-      } catch {}
-    }
+    const wasRunning = prevRunning.current === true
     prevRunning.current = running
-  }, [running])
+    if (!wasRunning || running !== false) return
+
+    const hostname = typeof window === 'undefined' ? '' : window.location.hostname
+    if (!clientShouldAutoPlayCompletion({ hostname, subagent })) return
+    if (!claimAutoplay(Date.now(), CLIENT_AUTOPLAY_DEBOUNCE_MS, typeof localStorage === 'undefined' ? null : localStorage)) {
+      return
+    }
+
+    const category = completionCategoryFromSnapshot(lastAgentError)
+    void (async () => {
+      const gate = await remotePlaybackAllowed(category)
+      if (!gate.allowed) return
+      try {
+        const audio = new Audio(completionAudioUrl(category))
+        audio.volume = gate.volume
+        await audio.play()
+      } catch {
+        // autoplay policy or missing pack — the host may still have played
+      }
+    })()
+  }, [running, subagent, lastAgentError])
 
   return null
 }
