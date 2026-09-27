@@ -33,14 +33,18 @@ export function isLoopbackHostname(hostname: string | undefined | null): boolean
 }
 
 /**
- * Browser autoplay is for remote pages only. Subagent composers must stay
- * silent — the parent turn still owns the one completion sound.
+ * Browser autoplay is for remote pages only. Local pages (localhost / 127.0.0.1,
+ * whether in Chrome, PWA, or native JackDSH) share speakers with the host
+ * process which plays via afplay/native audio.
+ * Subagent composers must stay silent — the parent turn still owns the one completion sound.
  */
 export function clientShouldAutoPlayCompletion(input: {
   hostname: string | undefined | null
   subagent?: unknown
+  isJackDsh?: boolean
 }): boolean {
   if (isLoopbackHostname(input.hostname)) return false
+  if (input.isJackDsh) return false
   if (input.subagent != null) return false
   return true
 }

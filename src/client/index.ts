@@ -84,7 +84,8 @@ function AutoAudioListener(props: { useSession?: (selector: (s: any) => any) => 
     if (!wasRunning || running !== false) return
 
     const hostname = typeof window === 'undefined' ? '' : window.location.hostname
-    if (!clientShouldAutoPlayCompletion({ hostname, subagent })) return
+    const isJackDsh = typeof window !== 'undefined' && Boolean((window as any).jackdshNative)
+    if (!clientShouldAutoPlayCompletion({ hostname, subagent, isJackDsh })) return
     if (!claimAutoplay(Date.now(), CLIENT_AUTOPLAY_DEBOUNCE_MS, typeof localStorage === 'undefined' ? null : localStorage)) {
       return
     }

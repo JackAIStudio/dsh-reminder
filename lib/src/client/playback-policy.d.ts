@@ -18,12 +18,15 @@ export declare const AUTOPLAY_STORAGE_KEY = "dsh-reminder:last-autoplay-at";
 /** True for addresses that share speakers with the dsh host process. */
 export declare function isLoopbackHostname(hostname: string | undefined | null): boolean;
 /**
- * Browser autoplay is for remote pages only. Subagent composers must stay
- * silent — the parent turn still owns the one completion sound.
+ * Browser autoplay is for remote pages only. Local pages (localhost / 127.0.0.1,
+ * whether in Chrome, PWA, or native JackDSH) share speakers with the host
+ * process which plays via afplay/native audio.
+ * Subagent composers must stay silent — the parent turn still owns the one completion sound.
  */
 export declare function clientShouldAutoPlayCompletion(input: {
     hostname: string | undefined | null;
     subagent?: unknown;
+    isJackDsh?: boolean;
 }): boolean;
 export declare function completionAudioUrl(category: string, now?: number): string;
 export declare function previewAudioUrl(pack: string, now?: number): string;

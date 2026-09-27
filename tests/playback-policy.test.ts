@@ -30,9 +30,12 @@ describe('isLoopbackHostname', () => {
 })
 
 describe('clientShouldAutoPlayCompletion', () => {
-  it('skips packaged app / Chrome tabs on the host machine', () => {
+  it('skips packaged app, Chrome tabs, and native desktop app on localhost', () => {
     expect(clientShouldAutoPlayCompletion({ hostname: '127.0.0.1' })).toBe(false)
     expect(clientShouldAutoPlayCompletion({ hostname: 'localhost' })).toBe(false)
+    expect(clientShouldAutoPlayCompletion({ hostname: '127.0.0.1', isJackDsh: true })).toBe(false)
+    expect(clientShouldAutoPlayCompletion({ hostname: '127.0.0.1', isJackDsh: false })).toBe(false)
+    expect(clientShouldAutoPlayCompletion({ hostname: 'localhost', isJackDsh: false })).toBe(false)
   })
 
   it('allows phone / cloud pages that are not the host speakers', () => {

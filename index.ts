@@ -105,11 +105,20 @@ function isTopLevel(session: Session): boolean {
   return depth === undefined || depth === 0
 }
 
+/** Get session events safely across DSH 0.1.5 and 0.1.7+ (snapshotEvents or events fallback) */
+function getSessionEvents(session: Session): readonly SessionEvent[] {
+  if (typeof (session as any).snapshotEvents === 'function') {
+    return (session as any).snapshotEvents()
+  }
+  return (session as any).events ?? []
+}
+
 /** Look up the tool name for a `tool/result` by walking back to its `tool/call`. */
 function toolNameFor(session: Session, callId: unknown): string {
   if (typeof callId !== 'string') return 'tool'
-  for (let i = session.events.length - 1; i >= 0; i--) {
-    const event = session.events[i]
+  const events = getSessionEvents(session)
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
     if (event?.type === 'tool/call' && String((event.data as { callId?: unknown }).callId) === callId) {
       const name = (event.data as { name?: unknown }).name
       return typeof name === 'string' ? name : 'tool'
@@ -286,6 +295,7 @@ export function apply(ctx: Context): void {
     if (!shouldPlaySounds()) return
 
     const now = Date.now()
+    sessionStartTimes.set(session, now)
     const window = config.annoyed_window_seconds * 1000
     state.prompt_timestamps = state.prompt_timestamps.filter((t) => now - t < window)
     state.prompt_timestamps.push(now)
@@ -343,7 +353,7 @@ export function apply(ctx: Context): void {
     if (!shouldPlaySounds()) return
 
     const now = Date.now()
-    if (now - state.last_stop_time < 5000) return
+    if (now - state.last_stop_time < 1500) return
     state.last_stop_time = now
 
     const reason = event.data.reason
@@ -360,7 +370,7 @@ export function apply(ctx: Context): void {
 
       if (config.enabled && !state.paused) {
         const project = projectName(session)
-        const summary = extractLastAssistantText(session.events)
+        const summary = extractLastAssistantText(getSessionEvents(session))
         const { title, body } = buildNotifyContent('done', project, summary || undefined)
         sendNotification(title, body, config, undefined, 'done', currentPrompts.get(session))
       }
