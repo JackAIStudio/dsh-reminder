@@ -24,4 +24,5 @@
 import type { Context } from '@deepseek-ai/cordis';
 import './src/compaction-events.ts';
 export declare const name = "peon-ping";
+export declare const inject: string[];
 export declare function apply(ctx: Context): void;
