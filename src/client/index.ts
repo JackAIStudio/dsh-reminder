@@ -108,6 +108,13 @@ function AutoAudioListener(props: { useSession?: (selector: (s: any) => any) => 
 }
 
 export function apply(ctx: ClientContext): void {
+  // dsh-app-badge also has a browser-notification fallback. Mark this client
+  // as the notification owner so the two plugins never show two popups for
+  // the same turn completion.
+  if (typeof window !== 'undefined') {
+    (window as unknown as Record<string, unknown>).__DSH_REMINDER_NOTIFICATIONS__ = true
+  }
+
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-reminder: copy dictionaries')
 
   const t = ctx.locale.bind(NS)
