@@ -27,7 +27,7 @@ export interface NotifyCommand {
  * the native macOS look and the only path that can carry an app click action
  * without spawning a separate notifier app.
  */
-type ElectronNotifyResult = "shown" | "focused" | "unavailable";
+type ElectronNotifyResult = "shown" | "unavailable";
 
 function tryElectronNotification(title: string, body: string, openUrl?: string): ElectronNotifyResult {
   if (!process.versions.electron) return "unavailable";
@@ -35,14 +35,8 @@ function tryElectronNotification(title: string, body: string, openUrl?: string):
     const require = createRequire(import.meta.url);
     const electron = require("electron") as {
       Notification?: { isSupported?: () => boolean; new (options: { title: string; body: string }): { show(): void; on(event: "click", listener: () => void): void } };
-      BrowserWindow?: { getFocusedWindow?: () => unknown };
       shell?: { openExternal?: (url: string) => Promise<void> };
     };
-    // macOS intentionally suppresses banners from the frontmost app and puts
-    // them straight into Notification Center. The chat already shows the
-    // completion while the user is looking at it, so only notify when the
-    // Harness window is not focused.
-    if (electron.BrowserWindow?.getFocusedWindow?.()) return "focused";
     const NotificationCtor = electron.Notification;
     if (!NotificationCtor || NotificationCtor.isSupported?.() !== true) return "unavailable";
     const notice = new NotificationCtor({ title, body });
@@ -189,7 +183,7 @@ export function sendDesktopNotification(
     : options;
   const platform = opts.platform ?? detectPlatform();
   const electronResult = tryElectronNotification(title, body, opts.openUrl);
-  if (electronResult === "shown" || electronResult === "focused") return true;
+  if (electronResult === "shown") return true;
   const notifier = detectNotifier(platform, defaultCommandExists, opts.openUrl !== undefined);
   if (!notifier) return false;
 
