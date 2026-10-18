@@ -77,7 +77,7 @@ describe("sendNotification", () => {
     mockSendDesktop.mockClear();
     mockSendDesktop.mockReturnValue(true);
     const config: PeonConfig = { ...DEFAULT_CONFIG, relay_mode: "local" };
-    sendNotification("project · done", "Done", config);
+    sendNotification("project · done", "Done", config, undefined, "done", "prompt", "http://127.0.0.1:3080/?session=abc");
 
     expect(mockSendDesktop).toHaveBeenCalledTimes(1);
     const call = mockSendDesktop.mock.calls[0] as unknown[];
@@ -85,6 +85,7 @@ describe("sendNotification", () => {
     expect(call[1]).toBe("Done");
     const opts = call[2] as { iconPath?: string };
     expect(opts).toHaveProperty("iconPath");
+    expect(opts).toHaveProperty("openUrl", "http://127.0.0.1:3080/?session=abc");
   });
 });
 

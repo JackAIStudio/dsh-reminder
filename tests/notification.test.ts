@@ -7,6 +7,12 @@ describe("notification", () => {
       expect(detectNotifier("mac")).toBe("osascript");
     });
 
+    it("prefers terminal-notifier on mac when clickable notifications are requested", async () => {
+      const { detectNotifier } = await import("../src/notification");
+      const exists = (cmd: string) => cmd === "terminal-notifier";
+      expect(detectNotifier("mac", exists, true)).toBe("terminal-notifier");
+    });
+
     it("returns 'notify-send' on linux when available", async () => {
       const { detectNotifier } = await import("../src/notification");
       const exists = (cmd: string) => cmd === "notify-send";
@@ -36,6 +42,25 @@ describe("notification", () => {
   });
 
   describe("buildNotifyCommand", () => {
+    it("builds a clickable terminal-notifier command for mac", async () => {
+      const { buildNotifyCommand } = await import("../src/notification");
+      const cmd = buildNotifyCommand(
+        "terminal-notifier",
+        "Project · done",
+        "Finished",
+        "/tmp/icon.png",
+        "done",
+        "prompt",
+        "http://127.0.0.1:3080/?session=session-abc",
+      );
+      expect(cmd).not.toBeNull();
+      expect(cmd!.bin).toBe("terminal-notifier");
+      expect(cmd!.args).toContain("-open");
+      expect(cmd!.args).toContain("http://127.0.0.1:3080/?session=session-abc");
+      expect(cmd!.args).toContain("-contentImage");
+      expect(cmd!.args).toContain("-group");
+    });
+
     it("builds osascript command for mac", async () => {
       const { buildNotifyCommand } = await import("../src/notification");
       const cmd = buildNotifyCommand("osascript", "Test Title", "Test Body");

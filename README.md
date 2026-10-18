@@ -97,12 +97,24 @@ To install specific packs from the registry directly, edit `~/.config/peon-ping/
 
 | Platform | Player | Notifications |
 |----------|--------|---------------|
-| macOS | `afplay` (built-in) | `osascript` |
+| macOS | `afplay` (built-in) | `terminal-notifier` (click-through; falls back to `osascript`) |
 | Linux | `pw-play`, `paplay`, `ffplay`, `mpv`, `play`, or `aplay` (first found) | `notify-send` (desktop session required) |
 | WSL | PowerShell `MediaPlayer` — the WSL path is converted to the Windows view (`wslpath -w` → `\\wsl.localhost\<distro>\...` or `D:\...`) so the spawned Windows PowerShell can actually open the file | Windows Toast (text-only; no icon — WinRT silently drops icons from WSL paths) |
 | **Windows (native)** ⭐ | `ffplay` (recommended, `winget install Gyan.FFmpeg`) → `mpv` → `winmm.dll PlaySound` fallback (no volume control) | Custom WinForms popup (multi-monitor, no AUMID needed) |
 
 WSL audio works out of the box on any distro: the `\\wsl.localhost\<distro>\...` prefix, the user name, and the `/mnt/<drive>` mounts are resolved dynamically by `wslpath -w` per machine — nothing is hardcoded.
+
+### macOS: make notifications open the conversation
+
+Notifications sent by `osascript` are attributed to Script Editor, so clicking one only brings Script Editor forward. Install [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) and the plugin will use it instead, binding each notification click to the session's `?session=<id>` URL:
+
+```bash
+brew install terminal-notifier
+```
+
+Allow notifications for `terminal-notifier` in System Settings → Notifications on first use. If it is missing or not allowed, the plugin falls back to the old `osascript` path, so sounds and summaries still work; only click-through is unavailable.
+
+Session targeting relies on `dsh-session-navigator` handling `?session=<id>`; the local profile already has that plugin installed.
 
 ## Config and data
 

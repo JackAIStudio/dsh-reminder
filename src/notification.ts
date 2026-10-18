@@ -7,7 +7,13 @@ import { detectPlatform, detectPwshBin, type Platform } from "./platform.ts";
 
 export const DEFAULT_ICON_PATH = join(DATA_DIR, "peon-icon.png");
 
-export type Notifier = "osascript" | "notify-send" | "powershell" | "winforms";
+export type Notifier = "terminal-notifier" | "osascript" | "notify-send" | "powershell" | "winforms";
+
+/** Common Homebrew install locations, in case dsh was launched with a restricted PATH. */
+const TERMINAL_NOTIFIER_CANDIDATES = [
+  "/opt/homebrew/bin/terminal-notifier",
+  "/usr/local/bin/terminal-notifier",
+] as const;
 
 export interface NotifyCommand {
   bin: string;
@@ -30,10 +36,19 @@ export function escapeNotificationText(text: string): string {
 export function detectNotifier(
   platform: Platform = detectPlatform(),
   commandExists: (cmd: string) => boolean = defaultCommandExists,
+  preferClickable = false,
 ): Notifier | null {
   switch (platform) {
-    case "mac":
+    case "mac": {
+      if (
+        preferClickable
+        && (commandExists("terminal-notifier")
+          || TERMINAL_NOTIFIER_CANDIDATES.some((candidate) => existsSync(candidate)))
+      ) {
+        return "terminal-notifier";
+      }
       return "osascript";
+    }
     case "linux":
       return commandExists("notify-send") ? "notify-send" : null;
     case "win":
@@ -64,11 +79,20 @@ export function buildNotifyCommand(
   iconPath?: string,
   status?: NotifyStatus,
   promptLine?: string,
+  openUrl?: string,
 ): NotifyCommand | null {
   const safeTitle = escapeNotificationText(title);
   const safeBody = escapeNotificationText(body);
 
   switch (notifier) {
+    case "terminal-notifier": {
+      const args = ["-title", title, "-message", body];
+      if (openUrl) {
+        args.push("-subtitle", "点击打开会话", "-open", openUrl, "-group", openUrl);
+      }
+      if (iconPath) args.push("-contentImage", iconPath);
+      return { bin: "terminal-notifier", args };
+    }
     case "osascript": {
       const script = `display notification "${safeBody}" with title "${safeTitle}"`;
       return { bin: "osascript", args: ["-e", script] };
@@ -116,6 +140,8 @@ export interface NotifyOptions {
   iconPath?: string;
   status?: NotifyStatus;
   promptLine?: string;
+  /** Browser/Dock deep link to open when the notification is clicked. */
+  openUrl?: string;
 }
 
 export function sendDesktopNotification(
@@ -127,10 +153,18 @@ export function sendDesktopNotification(
     ? { platform: options }
     : options;
   const platform = opts.platform ?? detectPlatform();
-  const notifier = detectNotifier(platform);
+  const notifier = detectNotifier(platform, defaultCommandExists, opts.openUrl !== undefined);
   if (!notifier) return false;
 
-  const cmd = buildNotifyCommand(notifier, title, body, opts.iconPath, opts.status, opts.promptLine);
+  const cmd = buildNotifyCommand(
+    notifier,
+    title,
+    body,
+    opts.iconPath,
+    opts.status,
+    opts.promptLine,
+    opts.openUrl,
+  );
   if (!cmd) return false;
 
   // Windows: detached must be false. With detached:true, Node creates the
@@ -144,6 +178,30 @@ export function sendDesktopNotification(
       stdio: "ignore",
       detached: !isWindows,
     });
+    if (notifier === "terminal-notifier") {
+      // terminal-notifier exits 3 when its macOS notification permission is
+      // off. Keep the old notification path as a fallback so completion
+      // alerts still appear before the user enables the clickable sender.
+      child.on("exit", (code) => {
+        if (code !== 3) return;
+        const fallback = buildNotifyCommand(
+          "osascript",
+          title,
+          body,
+          opts.iconPath,
+          opts.status,
+          opts.promptLine,
+        );
+        if (!fallback) return;
+        try {
+          const childFallback = spawn(fallback.bin, fallback.args, {
+            stdio: "ignore",
+            detached: true,
+          });
+          childFallback.unref();
+        } catch {}
+      });
+    }
     child.unref();
     return true;
   } catch {

@@ -298,6 +298,7 @@ export function sendNotification(
   uiNotify?: UiNotify,
   status?: NotifyStatus,
   promptLine?: string,
+  openUrl?: string,
 ): void {
   if (!config.desktop_notifications) return;
 
@@ -313,6 +314,7 @@ export function sendNotification(
     iconPath,
     ...(status !== undefined ? { status } : {}),
     ...(promptLine !== undefined ? { promptLine } : {}),
+    ...(openUrl !== undefined ? { openUrl } : {}),
   };
   const sent = sendDesktopNotification(title, body, options);
   if (!sent && uiNotify) {

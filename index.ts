@@ -230,6 +230,17 @@ export function apply(ctx: Context): void {
 
   const hasPacks = () => listPacks().length > 0
 
+  /** Deep link for the session that produced this notification. */
+  const sessionDeepLink = (session: Session): string => {
+    const webServer = ctx.get('webServer') as { port?: number } | undefined
+    const index = process.argv.indexOf('--port')
+    const argvPort = index >= 0 ? Number(process.argv[index + 1]) : undefined
+    const port = webServer?.port
+      ?? (Number.isInteger(argvPort) && argvPort! > 0 ? argvPort : undefined)
+      ?? 3080
+    return `http://127.0.0.1:${port}/?session=${encodeURIComponent(session.header.id)}`
+  }
+
   const shouldPlaySounds = () => {
     if (installing) return false
     const relayUrl = getRelayUrl(config.relay_mode)
@@ -337,7 +348,7 @@ export function apply(ctx: Context): void {
         const source = (event.data as { message?: { source?: { callId?: unknown } } }).message?.source
         const toolName = toolNameFor(session, source?.callId)
         const { title, body } = buildNotifyContent('error', project, `[${toolName}]: ${detail}`)
-        sendNotification(title, body, config, undefined, 'error', currentPrompts.get(session))
+        sendNotification(title, body, config, undefined, 'error', currentPrompts.get(session), sessionDeepLink(session))
       }
     }
   })
@@ -372,7 +383,7 @@ export function apply(ctx: Context): void {
         const project = projectName(session)
         const summary = extractLastAssistantText(getSessionEvents(session))
         const { title, body } = buildNotifyContent('done', project, summary || undefined)
-        sendNotification(title, body, config, undefined, 'done', currentPrompts.get(session))
+        sendNotification(title, body, config, undefined, 'done', currentPrompts.get(session), sessionDeepLink(session))
       }
     } else {
       // Unexpected termination (error / aborted / blocked / max-tokens /
@@ -383,7 +394,7 @@ export function apply(ctx: Context): void {
       if (config.enabled && !state.paused && config.desktop_notifications) {
         const project = projectName(session)
         const { title, body } = buildNotifyContent('error', project, turnEndFailureLabel(reason))
-        sendNotification(title, body, config, undefined, 'error', currentPrompts.get(session))
+        sendNotification(title, body, config, undefined, 'error', currentPrompts.get(session), sessionDeepLink(session))
       }
     }
   })
@@ -407,7 +418,7 @@ export function apply(ctx: Context): void {
     if (config.enabled && !state.paused && config.desktop_notifications) {
       const project = projectName(session)
       const { title, body } = buildNotifyContent('compacted', project)
-      sendNotification(title, body, config, undefined, 'compacted')
+      sendNotification(title, body, config, undefined, 'compacted', undefined, sessionDeepLink(session))
     }
   })
 
