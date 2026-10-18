@@ -70,6 +70,8 @@ dsh plugin --profile web remove dsh-reminder
 
 在官方 DeepSeek Harness Desktop 中，插件优先使用 Electron 的 `Notification`：通知走 macOS 原生样式和 DeepSeek Harness 图标，不再使用音效包的 Warcraft 图片。点击会打开本进程的 Web GUI，并用 `#session=<id>` 直达对应会话。
 
+macOS 的「临时」就是横幅样式，不需要改成「持续」。系统会抑制前台应用自己的横幅，所以插件在 Harness 窗口处于前台时不发送通知（聊天里已经有完成状态）；切到其他应用后完成任务，才会出现横幅。如果只看到通知中心条目，先确认 DeepSeek Harness 在「系统设置 → 通知」中是「临时」，且 Focus/专注模式没有拦它。
+
 非 Electron 宿主或原生通知不可用时，才回退到 [`terminal-notifier`](https://github.com/julienXX/terminal-notifier)（同样不带音效包图标）：
 
 ```bash
