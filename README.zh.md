@@ -68,15 +68,17 @@ dsh plugin --profile web remove dsh-reminder
 
 ### macOS：让通知点击直达会话
 
-`osascript` 发出的通知会被 macOS 归属到「脚本编辑器」，点击只能打开脚本编辑器。安装 [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) 后，插件会优先使用它，并把通知点击绑定到当前会话的 `?session=<id>` 地址：
+在官方 DeepSeek Harness Desktop 中，插件优先使用 Electron 的 `Notification`：通知走 macOS 原生样式和 DeepSeek Harness 图标，不再使用音效包的 Warcraft 图片。点击会打开本进程的 Web GUI，并用 `#session=<id>` 直达对应会话。
+
+非 Electron 宿主或原生通知不可用时，才回退到 [`terminal-notifier`](https://github.com/julienXX/terminal-notifier)（同样不带音效包图标）：
 
 ```bash
 brew install terminal-notifier
 ```
 
-首次使用需要在「系统设置 → 通知 → terminal-notifier」中打开通知。未安装或权限未开启时，插件会自动回退到原来的 `osascript` 通知；声音和摘要仍然正常，只是点击不能直达会话。
+首次使用需要在「系统设置 → 通知 → DeepSeek Harness」中允许通知。未安装 terminal-notifier 或权限未开启时，插件会自动回退到 `osascript` 通知；声音和摘要仍然正常，只是点击不能直达会话。
 
-会话定位依赖 `dsh-session-navigator` 对 `?session=<id>` 的处理；本机 profile 已经安装了这个插件。
+会话定位依赖 `dsh-session-navigator` 对 `#session=<id>` 的处理；本机 profile 已经安装了这个插件。
 
 ## 使用方法
 
@@ -108,7 +110,7 @@ brew install terminal-notifier
 
 | 平台 | 播放器 | 通知 |
 |----------|--------|------|
-| macOS | `afplay`（内置） | `terminal-notifier`（可点击跳转；未安装时回退 `osascript`） |
+| macOS | `afplay`（内置） | Desktop：Electron 原生通知（DSH 图标，可点击跳转）；其他宿主：`terminal-notifier`，无音效包图标 |
 | Linux | `pw-play`、`paplay`、`ffplay`、`mpv`、`play`、`aplay`（按顺序探测） | `notify-send`（需要桌面环境） |
 | WSL | PowerShell `MediaPlayer` —— WSL 路径会先经 `wslpath -w` 转换成 Windows 视图（`\\wsl.localhost\<发行版>\...` 或 `D:\...`），Windows 侧才能真正打开文件 | Windows Toast（纯文本，无图标 —— WinRT 对 WSL 路径的图标会静默丢弃） |
 | **Windows（原生）** ⭐ | `ffplay`（推荐，`winget install Gyan.FFmpeg`）→ `mpv` → `winmm.dll PlaySound` 回退（无音量控制） | 自绘 WinForms 弹窗（多显示器、无需 AUMID） |

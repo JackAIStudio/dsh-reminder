@@ -73,7 +73,7 @@ describe("sendNotification", () => {
     expect(notifications[0]).toContain("Task complete");
   });
 
-  it("calls sendDesktopNotification with title, body, and icon", () => {
+  it("calls sendDesktopNotification with title, body, and session link", () => {
     mockSendDesktop.mockClear();
     mockSendDesktop.mockReturnValue(true);
     const config: PeonConfig = { ...DEFAULT_CONFIG, relay_mode: "local" };
@@ -84,7 +84,7 @@ describe("sendNotification", () => {
     expect(call[0]).toBe("project · done");
     expect(call[1]).toBe("Done");
     const opts = call[2] as { iconPath?: string };
-    expect(opts).toHaveProperty("iconPath");
+    expect(opts.iconPath).toBeUndefined();
     expect(opts).toHaveProperty("openUrl", "http://127.0.0.1:3080/?session=abc");
   });
 });

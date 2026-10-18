@@ -42,7 +42,7 @@ describe("notification", () => {
   });
 
   describe("buildNotifyCommand", () => {
-    it("builds a clickable terminal-notifier command for mac", async () => {
+    it("builds a clickable terminal-notifier command without a pack icon", async () => {
       const { buildNotifyCommand } = await import("../src/notification");
       const cmd = buildNotifyCommand(
         "terminal-notifier",
@@ -57,7 +57,7 @@ describe("notification", () => {
       expect(cmd!.bin).toBe("terminal-notifier");
       expect(cmd!.args).toContain("-open");
       expect(cmd!.args).toContain("http://127.0.0.1:3080/?session=session-abc");
-      expect(cmd!.args).toContain("-contentImage");
+      expect(cmd!.args).not.toContain("-contentImage");
       expect(cmd!.args).toContain("-group");
     });
 

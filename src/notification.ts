@@ -1,4 +1,5 @@
 import { spawn, execSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./constants.ts";
@@ -18,6 +19,33 @@ const TERMINAL_NOTIFIER_CANDIDATES = [
 export interface NotifyCommand {
   bin: string;
   args: string[];
+}
+
+/**
+ * Desktop runs inside Electron, so use the app's native notification center
+ * entry (DeepSeek Harness icon) instead of terminal-notifier. This is both
+ * the native macOS look and the only path that can carry an app click action
+ * without spawning a separate notifier app.
+ */
+function tryElectronNotification(title: string, body: string, openUrl?: string): boolean {
+  if (!process.versions.electron) return false;
+  try {
+    const require = createRequire(import.meta.url);
+    const electron = require("electron") as {
+      Notification?: { isSupported?: () => boolean; new (options: { title: string; body: string }): { show(): void; on(event: "click", listener: () => void): void } };
+      shell?: { openExternal?: (url: string) => Promise<void> };
+    };
+    const NotificationCtor = electron.Notification;
+    if (!NotificationCtor || NotificationCtor.isSupported?.() !== true) return false;
+    const notice = new NotificationCtor({ title, body });
+    if (openUrl && electron.shell?.openExternal) {
+      notice.on("click", () => { void electron.shell?.openExternal?.(openUrl); });
+    }
+    notice.show();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function defaultCommandExists(cmd: string): boolean {
@@ -90,7 +118,6 @@ export function buildNotifyCommand(
       if (openUrl) {
         args.push("-subtitle", "点击打开会话", "-open", openUrl, "-group", openUrl);
       }
-      if (iconPath) args.push("-contentImage", iconPath);
       return { bin: "terminal-notifier", args };
     }
     case "osascript": {
@@ -153,6 +180,7 @@ export function sendDesktopNotification(
     ? { platform: options }
     : options;
   const platform = opts.platform ?? detectPlatform();
+  if (tryElectronNotification(title, body, opts.openUrl)) return true;
   const notifier = detectNotifier(platform, defaultCommandExists, opts.openUrl !== undefined);
   if (!notifier) return false;
 

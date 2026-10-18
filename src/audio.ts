@@ -1,11 +1,10 @@
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { detectLinuxPlayer, detectPlatform, detectPwshBin, detectWindowsPlayer, wslToWindowsPath, type Platform } from "./platform.ts";
 import { saveState } from "./config.ts";
-import { resolveIcon, sendDesktopNotification, type NotifyOptions } from "./notification.ts";
+import { sendDesktopNotification, type NotifyOptions } from "./notification.ts";
 import type { NotifyStatus } from "./notify-content.ts";
-import { getPacksDir, pickSound } from "./packs.ts";
+import { pickSound } from "./packs.ts";
 import { getRelayUrl, relayPlayCategory, relayNotify } from "./relay.ts";
 import type { PeonConfig, PeonState } from "./types.ts";
 
@@ -308,10 +307,7 @@ export function sendNotification(
     return;
   }
 
-  const packPath = join(getPacksDir(), config.default_pack);
-  const iconPath = resolveIcon(packPath);
   const options: NotifyOptions = {
-    iconPath,
     ...(status !== undefined ? { status } : {}),
     ...(promptLine !== undefined ? { promptLine } : {}),
     ...(openUrl !== undefined ? { openUrl } : {}),
