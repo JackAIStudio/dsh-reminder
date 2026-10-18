@@ -239,23 +239,36 @@ export function apply(ctx: Context): void {
 
   const hasPacks = () => listPacks().length > 0
 
+  /** ctx.get() throws for an unregistered service on some Cordis versions. */
+  const getService = <T>(name: string): T | undefined => {
+    try { return ctx.get(name) as T | undefined } catch { return undefined }
+  }
+
   /** Deep link for the session that produced this notification. */
   const sessionDeepLink = (session: Session): string => {
-    const sessionQuery = `?session=${encodeURIComponent(session.header.id)}`
-    // The signed Desktop shell only registers the external dsh:// scheme and
-    // its handler currently supports dsh://open (focus). The loopback HTTP
-    // port answers 401 without a launch token, and dsh-app:// is internal-only.
+    // The Desktop host also serves the ordinary Web GUI on a loopback port.
+    // authenticatedUrl() adds this process's launch token; the token exchange
+    // redirects to `./` and preserves the fragment, so #session survives.
+    const connection = getService<{ authenticatedUrl?: (base: string) => string }>('connection')
+    const webServer = getService<{ port?: number; protocol?: string }>('webServer')
+    if (connection?.authenticatedUrl && webServer?.port) {
+      try {
+        const base = `${webServer.protocol ?? 'http:'}//127.0.0.1:${String(webServer.port)}/`
+        const url = new URL(connection.authenticatedUrl(base))
+        url.hash = `session=${encodeURIComponent(session.header.id)}`
+        return url.href
+      } catch {}
+    }
     const resourcesPath = (process as unknown as { resourcesPath?: string }).resourcesPath
     if (process.versions.electron || resourcesPath) {
       return 'dsh://open'
     }
-    const webServer = ctx.get('webServer') as { port?: number } | undefined
     const index = process.argv.indexOf('--port')
     const argvPort = index >= 0 ? Number(process.argv[index + 1]) : undefined
     const port = webServer?.port
       ?? (Number.isInteger(argvPort) && argvPort! > 0 ? argvPort : undefined)
       ?? 3080
-    return `http://127.0.0.1:${port}/${sessionQuery}`
+    return `http://127.0.0.1:${port}/?session=${encodeURIComponent(session.header.id)}`
   }
 
   const shouldPlaySounds = () => {
@@ -266,7 +279,7 @@ export function apply(ctx: Context): void {
 
   const projectName = (session: Session): string => {
     const cwd = session.header.cwd ?? process.cwd()
-    const titles = ctx.get('sessionTitle') as SessionTitleLike | undefined
+    const titles = getService<SessionTitleLike>('sessionTitle')
     const snapshot = titles?.get(session)
     return resolveProjectName(cwd, snapshot?.title)
   }
