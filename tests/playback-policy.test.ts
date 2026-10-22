@@ -1,64 +1,64 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  AUTOPLAY_STORAGE_KEY,
-  CLIENT_AUTOPLAY_DEBOUNCE_MS,
-  claimAutoplay,
-  clientShouldAutoPlayCompletion,
+  SOUND_EVENT_CLAIM_TTL_MS,
+  SOUND_EVENT_STORAGE_PREFIX,
+  claimSoundEvent,
   completionAudioUrl,
-  completionCategoryFromSnapshot,
-  isLoopbackHostname,
   previewAudioUrl,
-  resetAutoplayClaimForTests,
+  resetSoundEventClaimsForTests,
 } from '../src/client/playback-policy'
 
-describe('isLoopbackHostname', () => {
-  it('treats localhost, 127.0.0.1 and ::1 as loopback', () => {
-    expect(isLoopbackHostname('localhost')).toBe(true)
-    expect(isLoopbackHostname('127.0.0.1')).toBe(true)
-    expect(isLoopbackHostname('::1')).toBe(true)
-    expect(isLoopbackHostname('[::1]')).toBe(true)
-    expect(isLoopbackHostname('Foo.Localhost')).toBe(true)
+/** Minimal Storage implementation backed by a Map (same-origin tab model). */
+class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'length' | 'key'> {
+  private readonly map = new Map<string, string>()
+
+  get length(): number {
+    return this.map.size
+  }
+
+  key(index: number): string | null {
+    return [...this.map.keys()][index] ?? null
+  }
+
+  getItem(key: string): string | null {
+    return this.map.get(key) ?? null
+  }
+
+  setItem(key: string, value: string): void {
+    this.map.set(key, value)
+  }
+
+  removeItem(key: string): void {
+    this.map.delete(key)
+  }
+}
+
+describe('claimSoundEvent', () => {
+  beforeEach(() => {
+    resetSoundEventClaimsForTests()
   })
 
-  it('does not treat LAN, public or cloud hosts as loopback', () => {
-    expect(isLoopbackHostname('192.168.1.8')).toBe(false)
-    expect(isLoopbackHostname('mac.followjack.cn')).toBe(false)
-    expect(isLoopbackHostname('dsh.followjack.cn')).toBe(false)
-    expect(isLoopbackHostname('')).toBe(false)
-    expect(isLoopbackHostname(undefined)).toBe(false)
-  })
-})
-
-describe('clientShouldAutoPlayCompletion', () => {
-  it('skips packaged app, Chrome tabs, and native desktop app on localhost', () => {
-    expect(clientShouldAutoPlayCompletion({ hostname: '127.0.0.1' })).toBe(false)
-    expect(clientShouldAutoPlayCompletion({ hostname: 'localhost' })).toBe(false)
-    expect(clientShouldAutoPlayCompletion({ hostname: '127.0.0.1', isJackDsh: true })).toBe(false)
-    expect(clientShouldAutoPlayCompletion({ hostname: '127.0.0.1', isJackDsh: false })).toBe(false)
-    expect(clientShouldAutoPlayCompletion({ hostname: 'localhost', isJackDsh: false })).toBe(false)
+  it('lets one delivery play and suppresses a duplicate in the same page', () => {
+    const storage = new MemoryStorage()
+    expect(claimSoundEvent('event-1', storage, 1000)).toBe(true)
+    expect(claimSoundEvent('event-1', storage, 1001)).toBe(false)
   })
 
-  it('allows phone / cloud pages that are not the host speakers', () => {
-    expect(clientShouldAutoPlayCompletion({ hostname: 'mac.followjack.cn' })).toBe(true)
-    expect(clientShouldAutoPlayCompletion({ hostname: '192.168.1.8' })).toBe(true)
+  it('suppresses a duplicate across same-origin tabs', () => {
+    const storage = new MemoryStorage()
+    expect(claimSoundEvent('event-1', storage, 1000)).toBe(true)
+    // A second tab has its own in-memory set but shares localStorage.
+    resetSoundEventClaimsForTests()
+    expect(claimSoundEvent('event-1', storage, 1001)).toBe(false)
+    expect(claimSoundEvent('event-2', storage, 1002)).toBe(true)
   })
 
-  it('skips subagent composers so only the parent turn beeps', () => {
-    expect(clientShouldAutoPlayCompletion({
-      hostname: 'mac.followjack.cn',
-      subagent: { address: 'child' },
-    })).toBe(false)
-  })
-})
-
-describe('completionCategoryFromSnapshot', () => {
-  it('plays task.error when the session recorded an agent error', () => {
-    expect(completionCategoryFromSnapshot('boom')).toBe('task.error')
-  })
-
-  it('plays task.complete on a clean finish', () => {
-    expect(completionCategoryFromSnapshot(null)).toBe('task.complete')
-    expect(completionCategoryFromSnapshot('')).toBe('task.complete')
+  it('prunes claims older than the TTL', () => {
+    const storage = new MemoryStorage()
+    const staleKey = SOUND_EVENT_STORAGE_PREFIX + 'stale'
+    storage.setItem(staleKey, '0')
+    expect(claimSoundEvent('fresh', storage, SOUND_EVENT_CLAIM_TTL_MS + 1)).toBe(true)
+    expect(storage.getItem(staleKey)).toBeNull()
   })
 })
 
@@ -66,23 +66,5 @@ describe('audio urls', () => {
   it('encodes category and pack', () => {
     expect(completionAudioUrl('task.complete', 1)).toBe('/peon/api/audio/task.complete?t=1')
     expect(previewAudioUrl('peon', 2)).toBe('/peon/api/audio/session.start?pack=peon&t=2')
-  })
-})
-
-describe('claimAutoplay', () => {
-  beforeEach(() => {
-    resetAutoplayClaimForTests()
-  })
-
-  it('lets the first caller win and debounce later ones', () => {
-    const store = new Map<string, string>()
-    const storage = {
-      getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => { store.set(key, value) },
-    }
-    expect(claimAutoplay(1000, CLIENT_AUTOPLAY_DEBOUNCE_MS, storage)).toBe(true)
-    expect(claimAutoplay(1001, CLIENT_AUTOPLAY_DEBOUNCE_MS, storage)).toBe(false)
-    expect(claimAutoplay(1000 + CLIENT_AUTOPLAY_DEBOUNCE_MS, CLIENT_AUTOPLAY_DEBOUNCE_MS, storage)).toBe(true)
-    expect(store.get(AUTOPLAY_STORAGE_KEY)).toBe(String(1000 + CLIENT_AUTOPLAY_DEBOUNCE_MS))
   })
 })

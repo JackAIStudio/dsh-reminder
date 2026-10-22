@@ -1,53 +1,24 @@
 /**
- * When a completion sound may play in the browser.
+ * Sound-event playback policy for the browser half.
  *
- * Local GUI (packaged Chromium app, Chrome tab, Electron window) talks to
- * `localhost` / `127.0.0.1`. The host plugin already plays through the
- * machine's speakers (`afplay` / `paplay` / …). Playing Web Audio as well
- * stacks the same clip on top of itself.
- *
- * Remote GUIs (phone via LAN/public URL, cloud web) are not the host
- * machine — those pages still need Web Audio.
+ * The host is the single source of truth for whether a category is enabled
+ * and for the chosen volume. It broadcasts one `sound` event over
+ * `/peon/api/events`; every connected GUI receives that event and plays it
+ * locally. The host process only runs `afplay` when no GUI is connected
+ * (CLI / headless), so a desktop app never stacks a host clip under the
+ * renderer's Web Audio clip.
  *
  * @module dsh-reminder/client/playback-policy
  */
 
-/** Same 5s window the host uses on `state.last_stop_time`. */
-export const CLIENT_AUTOPLAY_DEBOUNCE_MS = 5000
+/** localStorage prefix for cross-tab sound-event claims. */
+export const SOUND_EVENT_STORAGE_PREFIX = 'dsh-reminder:sound:'
 
-/** localStorage key shared by every same-origin tab / PWA window. */
-export const AUTOPLAY_STORAGE_KEY = 'dsh-reminder:last-autoplay-at'
+/** How long a claimed event id is kept before pruning. */
+export const SOUND_EVENT_CLAIM_TTL_MS = 60_000
 
-/** In-process lock so two dock listeners in one tab cannot race localStorage. */
-let memoryLastAutoplayAt: number | undefined
-
-/** True for addresses that share speakers with the dsh host process. */
-export function isLoopbackHostname(hostname: string | undefined | null): boolean {
-  if (hostname == null || hostname === '') return false
-  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase()
-  if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0:0:0:0:0:0:0:1') {
-    return true
-  }
-  if (host.endsWith('.localhost')) return true
-  return false
-}
-
-/**
- * Browser autoplay is for remote pages only. Local pages (localhost / 127.0.0.1,
- * whether in Chrome, PWA, or native JackDSH) share speakers with the host
- * process which plays via afplay/native audio.
- * Subagent composers must stay silent — the parent turn still owns the one completion sound.
- */
-export function clientShouldAutoPlayCompletion(input: {
-  hostname: string | undefined | null
-  subagent?: unknown
-  isJackDsh?: boolean
-}): boolean {
-  if (isLoopbackHostname(input.hostname)) return false
-  if (input.isJackDsh) return false
-  if (input.subagent != null) return false
-  return true
-}
+/** In-process claims so two listeners in one page cannot race. */
+const memoryClaims = new Set<string>()
 
 export function completionAudioUrl(category: string, now = Date.now()): string {
   return `/peon/api/audio/${encodeURIComponent(category)}?t=${now}`
@@ -57,42 +28,54 @@ export function previewAudioUrl(pack: string, now = Date.now()): string {
   return `/peon/api/audio/session.start?pack=${encodeURIComponent(pack)}&t=${now}`
 }
 
-/** Pick the completion vs error clip from the session snapshot. */
-export function completionCategoryFromSnapshot(lastAgentError: unknown): 'task.complete' | 'task.error' {
-  return typeof lastAgentError === 'string' && lastAgentError.length > 0
-    ? 'task.error'
-    : 'task.complete'
-}
-
-export function resetAutoplayClaimForTests(): void {
-  memoryLastAutoplayAt = undefined
-}
-
 /**
- * First caller within `debounceMs` wins. Same-tab listeners share the
- * in-memory lock; same-origin tabs also share localStorage.
+ * First same-origin tab to see an event id plays it; later tabs stay silent.
+ * The host sends one id per lifecycle sound, so this only dedupes duplicate
+ * deliveries (multiple tabs / a reloaded listener), never two real sounds.
  */
-export function claimAutoplay(
+export function claimSoundEvent(
+  id: string,
+  storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'length' | 'key'> | null,
   now = Date.now(),
-  debounceMs = CLIENT_AUTOPLAY_DEBOUNCE_MS,
-  storage?: Pick<Storage, 'getItem' | 'setItem'> | null,
 ): boolean {
-  if (memoryLastAutoplayAt !== undefined && now - memoryLastAutoplayAt < debounceMs) return false
-  if (storage) {
-    try {
-      const raw = storage.getItem(AUTOPLAY_STORAGE_KEY)
-      if (raw != null) {
-        const prev = Number(raw)
-        if (Number.isFinite(prev) && now - prev < debounceMs) {
-          memoryLastAutoplayAt = prev
-          return false
-        }
-      }
-      storage.setItem(AUTOPLAY_STORAGE_KEY, String(now))
-    } catch {
-      // private mode / disabled storage — memory lock is enough for this tab
-    }
+  if (id === '') return true
+  if (memoryClaims.has(id)) return false
+  memoryClaims.add(id)
+  if (memoryClaims.size > 200) {
+    const oldest = memoryClaims.values().next().value
+    if (oldest !== undefined) memoryClaims.delete(oldest)
   }
-  memoryLastAutoplayAt = now
-  return true
+  if (!storage) return true
+  const key = SOUND_EVENT_STORAGE_PREFIX + id
+  try {
+    if (storage.getItem(key) !== null) return false
+    storage.setItem(key, String(now))
+    pruneSoundEventClaims(storage, now)
+    return true
+  } catch {
+    // private mode / disabled storage — the in-memory claim is enough
+    return true
+  }
+}
+
+function pruneSoundEventClaims(
+  storage: Pick<Storage, 'getItem' | 'removeItem' | 'length' | 'key'>,
+  now: number,
+): void {
+  try {
+    for (let i = storage.length - 1; i >= 0; i--) {
+      const key = storage.key(i)
+      if (key === null || !key.startsWith(SOUND_EVENT_STORAGE_PREFIX)) continue
+      const claimedAt = Number(storage.getItem(key))
+      if (!Number.isFinite(claimedAt) || now - claimedAt > SOUND_EVENT_CLAIM_TTL_MS) {
+        storage.removeItem(key)
+      }
+    }
+  } catch {
+    // Storage can disappear mid-iteration in private mode; playback still works.
+  }
+}
+
+export function resetSoundEventClaimsForTests(): void {
+  memoryClaims.clear()
 }

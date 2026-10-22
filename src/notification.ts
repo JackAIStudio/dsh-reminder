@@ -34,12 +34,14 @@ function tryElectronNotification(title: string, body: string, openUrl?: string):
   try {
     const require = createRequire(import.meta.url);
     const electron = require("electron") as {
-      Notification?: { isSupported?: () => boolean; new (options: { title: string; body: string }): { show(): void; on(event: "click", listener: () => void): void } };
+      Notification?: { isSupported?: () => boolean; new (options: { title: string; body: string; silent?: boolean }): { show(): void; on(event: "click", listener: () => void): void } };
       shell?: { openExternal?: (url: string) => Promise<void> };
     };
     const NotificationCtor = electron.Notification;
     if (!NotificationCtor || NotificationCtor.isSupported?.() !== true) return "unavailable";
-    const notice = new NotificationCtor({ title, body });
+    // The sound pack is the one audible owner. Keep the native banner silent
+    // so macOS/Electron cannot add its own notification noise on top.
+    const notice = new NotificationCtor({ title, body, silent: true });
     if (openUrl && electron.shell?.openExternal) {
       notice.on("click", () => { void electron.shell?.openExternal?.(openUrl); });
     }

@@ -1,5 +1,5 @@
 /**
- * dsh-reminder settings section, browser half.
+ * dsh-reminder browser half.
  *
  * Registers the "peon-ping sounds" page in web Settings right below
  * "Agent Presets" (`settings.section` order 21; agent-presets is 20). The
@@ -10,51 +10,22 @@
  * served by this plugin's host half on the same origin, so the page needs no
  * settings-scope transport.
  *
+ * It also subscribes to `/peon/api/events`. The host broadcasts exactly one
+ * `sound` event per lifecycle sound and skips its own `afplay` while a GUI is
+ * connected, so the desktop app / browser is the only playback owner. This is
+ * the normal desktop-app arrangement: the app's UI plays the custom sound,
+ * and the host process is only the headless fallback.
+ *
  * @module dsh-reminder/client
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import React, { useRef, useEffect } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { PeonSettingsSection, type PeonSectionProps } from './PeonSettingsSection.tsx'
 import { en, zh, type PeonKey } from './locales.ts'
-import {
-  CLIENT_AUTOPLAY_DEBOUNCE_MS,
-  claimAutoplay,
-  clientShouldAutoPlayCompletion,
-  completionAudioUrl,
-  completionCategoryFromSnapshot,
-} from './playback-policy.ts'
-
-/** Host settings the remote autoplay path must still honour. */
-interface PeonPlaybackGate {
-  enabled?: boolean
-  paused?: boolean
-  categories?: Record<string, boolean>
-  volume?: number
-}
-
-/** True when the peon config allows this category to beep. Fail open on network errors. */
-async function remotePlaybackAllowed(category: string): Promise<{ allowed: boolean; volume: number }> {
-  try {
-    const response = await fetch('/peon/api/get', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    })
-    const parsed = (await response.json().catch(() => null)) as { ok?: boolean; value?: PeonPlaybackGate } | null
-    const value = parsed?.value
-    if (value === undefined) return { allowed: true, volume: 0.8 }
-    if (value.enabled === false || value.paused === true) return { allowed: false, volume: 0 }
-    if (value.categories?.[category] === false) return { allowed: false, volume: 0 }
-    const volume = typeof value.volume === 'number' ? value.volume : 0.8
-    return { allowed: true, volume }
-  } catch {
-    return { allowed: true, volume: 0.8 }
-  }
-}
+import { claimSoundEvent, completionAudioUrl } from './playback-policy.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -69,42 +40,58 @@ export const NS = 'settings.peon'
 /** Services required by the settings section (copy + slot declaration only). */
 export const inject = ['slots', 'locale']
 
-/** Contribute the peon-ping sounds settings page. */
+/** One host-broadcast lifecycle sound. */
+interface PeonSoundEvent {
+  type?: string
+  id?: string
+  category?: string
+  volume?: number
+}
 
-function AutoAudioListener(props: { useSession?: (selector: (s: any) => any) => any }): null {
-  const select = typeof props.useSession === 'function' ? props.useSession : undefined
-  const running = select ? select((s: any) => s?.running) : false
-  const subagent = select ? select((s: any) => s?.subagent) : null
-  const lastAgentError = select ? select((s: any) => s?.lastAgentError) : null
-  const prevRunning = useRef(running)
+let currentAudio: HTMLAudioElement | undefined
 
-  useEffect(() => {
-    const wasRunning = prevRunning.current === true
-    prevRunning.current = running
-    if (!wasRunning || running !== false) return
-
-    const hostname = typeof window === 'undefined' ? '' : window.location.hostname
-    const isJackDsh = typeof window !== 'undefined' && Boolean((window as any).jackdshNative)
-    if (!clientShouldAutoPlayCompletion({ hostname, subagent, isJackDsh })) return
-    if (!claimAutoplay(Date.now(), CLIENT_AUTOPLAY_DEBOUNCE_MS, typeof localStorage === 'undefined' ? null : localStorage)) {
-      return
-    }
-
-    const category = completionCategoryFromSnapshot(lastAgentError)
-    void (async () => {
-      const gate = await remotePlaybackAllowed(category)
-      if (!gate.allowed) return
-      try {
-        const audio = new Audio(completionAudioUrl(category))
-        audio.volume = gate.volume
-        await audio.play()
-      } catch {
-        // autoplay policy or missing pack — the host may still have played
+function playSoundEvent(category: string, volume: number): void {
+  void (async () => {
+    try {
+      if (currentAudio !== undefined) {
+        currentAudio.pause()
+        currentAudio.currentTime = 0
       }
-    })()
-  }, [running, subagent, lastAgentError])
+      const audio = new Audio(completionAudioUrl(category))
+      currentAudio = audio
+      audio.volume = Math.max(0, Math.min(1, volume))
+      audio.addEventListener('ended', () => {
+        if (currentAudio === audio) currentAudio = undefined
+      }, { once: true })
+      await audio.play()
+    } catch (error) {
+      console.warn('[dsh-reminder] Web Audio playback failed:', error)
+    }
+  })()
+}
 
-  return null
+/**
+ * Subscribe to the host's sound-event stream. EventSource reconnects on its
+ * own after a host restart; the host treats a disconnected page as headless
+ * and falls back to native audio until this page reconnects.
+ */
+function connectSoundEvents(): () => void {
+  if (typeof window === 'undefined' || typeof EventSource === 'undefined') return () => {}
+  const source = new EventSource('/peon/api/events')
+  source.onmessage = (message) => {
+    try {
+      const event = JSON.parse(message.data) as PeonSoundEvent
+      if (event.type !== 'sound' || typeof event.category !== 'string') return
+      const id = typeof event.id === 'string' ? event.id : ''
+      const storage = typeof localStorage === 'undefined' ? null : localStorage
+      if (!claimSoundEvent(id, storage)) return
+      const volume = typeof event.volume === 'number' ? event.volume : 0.8
+      playSoundEvent(event.category, volume)
+    } catch {
+      // Ignore malformed frames; the stream itself is best-effort.
+    }
+  }
+  return () => source.close()
 }
 
 export function apply(ctx: ClientContext): void {
@@ -116,6 +103,7 @@ export function apply(ctx: ClientContext): void {
   }
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-reminder: copy dictionaries')
+  ctx.effect(connectSoundEvents, 'dsh-reminder: sound events')
 
   const t = ctx.locale.bind(NS)
   const injected = (): PeonSectionProps => ({ t, close: () => {} })
@@ -128,10 +116,4 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: injected,
   }, PeonSettingsSection))
-
-  ctx.slots.inject('conversation.composer.dock' as any, () => ctx.slots.register({
-    name: 'conversation.composer.dock' as any,
-    id: 'peon-ping-listener',
-    order: 100,
-  }, (props: any) => React.createElement(AutoAudioListener, props)))
 }

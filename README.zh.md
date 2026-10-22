@@ -98,13 +98,17 @@ brew install terminal-notifier
 
 ### 声音从哪边播
 
-以前本机完成一次任务会 **叠播两遍**：宿主进程走 `afplay`，网页 GUI（打包出来的 Chromium App，或 `127.0.0.1:3080` 的 Chrome 标签）再走一遍 Web Audio。Chrome 自己并没有 DSH 完成音 —— 是同一个插件在那个页面里又播了一次。
+现在每次事件只有 **一个声音所有者**：
 
-| GUI | 扬声器 |
-|-----|----------|
-| 打包 App / Chrome / Electron，地址是 `localhost` 或 `127.0.0.1` | **只走宿主**（`afplay` / `paplay` / …）。浏览器自动播放关掉，避免同一条音效叠在一起。 |
-| 手机、局域网 IP、云端网址（`mac.followjack.cn` 等） | **当前这个浏览器**（宿主机器如果有扬声器，仍可能响）。 |
+| 界面 | 谁播这个音效 |
+|------|--------------|
+| 桌面 App（`dsh-app://app`）、`localhost` 的 Chrome/Electron、手机、局域网、云端 | **当前这个界面**，走 Web Audio。宿主通过 `/peon/api/events` 只广播一条 `sound` 事件；显示通知的界面就是播音效的界面。 |
+| CLI / 无界面（没有 GUI 连接） | **宿主进程**（`afplay` / `paplay` / …）。这是唯一的兜底。 |
 | 设置页「试听」 | **只走当前浏览器** —— 宿主不再同时 `afplay`。 |
+
+只要 GUI 连着，宿主就不会再跑 `afplay`，桌面 App 不可能在页面音效下面再叠一条宿主音效。桌面通知保持静音：Electron 原生通知设置 `silent: true`，`terminal-notifier` 不带 `-sound`；真正发声的只有自定义音效包。
+
+这也替换掉了旧的 `localhost` / `127.0.0.1` 判断。官方桌面端的页面是 `dsh-app://app`（URL 的 hostname 就是 `app`），用主机名根本识别不出打包 App，正是它让页面又播了一遍。
 
 > **设置页的传输通道**：设置页通过插件自带的 `/peon/api` HTTP 路由读写配置（与网页同源，走浏览器信任篱笆），**不依赖** dsh 宿主向网页客户端暴露的设置命名空间白名单（`dsh-host-apiproxy` 的 `WEB_SETTINGS_NAMESPACES` 只放行内置 namespace，第三方插件的 namespace 即使注册成功也会被过滤）。因此本插件在未把 `peon-ping` 加入白名单的 dsh 版本上，设置页也能正常显示和操作。
 
@@ -112,7 +116,7 @@ brew install terminal-notifier
 
 | 平台 | 播放器 | 通知 |
 |----------|--------|------|
-| macOS | `afplay`（内置） | Desktop：Electron 原生通知（DSH 图标，可点击跳转）；其他宿主：`terminal-notifier`，无音效包图标 |
+| macOS | `afplay`（CLI/无界面兜底；有 GUI 时由界面走 Web Audio） | Desktop：可用时走 Electron 原生通知，否则 `terminal-notifier`；两者都静音 |
 | Linux | `pw-play`、`paplay`、`ffplay`、`mpv`、`play`、`aplay`（按顺序探测） | `notify-send`（需要桌面环境） |
 | WSL | PowerShell `MediaPlayer` —— WSL 路径会先经 `wslpath -w` 转换成 Windows 视图（`\\wsl.localhost\<发行版>\...` 或 `D:\...`），Windows 侧才能真正打开文件 | Windows Toast（纯文本，无图标 —— WinRT 对 WSL 路径的图标会静默丢弃） |
 | **Windows（原生）** ⭐ | `ffplay`（推荐，`winget install Gyan.FFmpeg`）→ `mpv` → `winmm.dll PlaySound` 回退（无音量控制） | 自绘 WinForms 弹窗（多显示器、无需 AUMID） |

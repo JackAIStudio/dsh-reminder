@@ -35,7 +35,7 @@ import './src/compaction-events.ts'
 import { playCategorySound, sendNotification } from './src/audio.ts'
 import { ensureDirs, loadConfig, loadState, saveConfig, saveState } from './src/config.ts'
 import { buildNotifyContent, extractLastAssistantText, extractToolErrorText, resolveProjectName } from './src/notify-content.ts'
-import { listPacks } from './src/packs.ts'
+import { listPacks, pickSound } from './src/packs.ts'
 import { checkRelayHealth, detectRemoteSession, getRelayUrl, relaySetupInstructions } from './src/relay.ts'
 import { previewPackSound, runInstall, getPackSoundFile } from './src/ui.ts'
 import {
@@ -277,6 +277,56 @@ export function apply(ctx: Context): void {
     return relayUrl !== null || hasPacks()
   }
 
+  // Connected GUI renderers own playback. The host process is only the
+  // fallback for CLI / headless sessions where no page can play audio. That
+  // keeps a desktop app from stacking a host `afplay` under the renderer's
+  // Web Audio clip.
+  const guiClients = new Set<ServerResponse>()
+  let soundEventSeq = 0
+
+  const broadcastSound = (category: string): number => {
+    if (guiClients.size === 0) return 0
+    const payload = `data: ${JSON.stringify({
+      type: 'sound',
+      id: `${Date.now().toString(36)}-${(soundEventSeq++).toString(36)}`,
+      category,
+      volume: config.volume,
+    })}\n\n`
+    let delivered = 0
+    for (const client of [...guiClients]) {
+      try {
+        client.write(payload)
+        delivered += 1
+      } catch {
+        guiClients.delete(client)
+      }
+    }
+    return delivered
+  }
+
+  /**
+   * Send one lifecycle sound to its single owner: a connected GUI when there
+   * is one, otherwise this host process. Relay mode stays host-side because
+   * the relay, not the local speakers, is the playback target.
+   */
+  const emitCategorySound = (category: string): void => {
+    if (!config.enabled || state.paused) return
+    if (!config.categories[category]) return
+    if (getRelayUrl(config.relay_mode) !== null) {
+      playCategorySound(category, config, state)
+      return
+    }
+    if (broadcastSound(category) > 0) return
+    playCategorySound(category, config, state)
+  }
+
+  ctx.effect(() => () => {
+    for (const client of guiClients) {
+      try { client.end() } catch {}
+    }
+    guiClients.clear()
+  }, 'dsh-reminder: GUI sound clients')
+
   const projectName = (session: Session): string => {
     const cwd = session.header.cwd ?? process.cwd()
     const titles = getService<SessionTitleLike>('sessionTitle')
@@ -314,7 +364,7 @@ export function apply(ctx: Context): void {
     state.prompt_timestamps = []
     saveState(state)
 
-    playCategorySound('session.start', config, state)
+    emitCategorySound('session.start')
   })
 
   // pi `before_agent_start` — capture the user's prompt for popup echo.
@@ -343,9 +393,9 @@ export function apply(ctx: Context): void {
     saveState(state)
 
     if (state.prompt_timestamps.length >= config.annoyed_threshold) {
-      playCategorySound('user.spam', config, state)
+      emitCategorySound('user.spam')
     } else {
-      playCategorySound('task.acknowledge', config, state)
+      emitCategorySound('task.acknowledge')
     }
   })
 
@@ -369,7 +419,7 @@ export function apply(ctx: Context): void {
     if (!shouldPlaySounds()) return
 
     if (config.tool_error_sounds) {
-      playCategorySound('task.error', config, state)
+      emitCategorySound('task.error')
 
       if (config.enabled && !state.paused && config.desktop_notifications) {
         const project = projectName(session)
@@ -407,7 +457,7 @@ export function apply(ctx: Context): void {
       if (silentMs > 0 && now - startTime < silentMs) return
 
       saveState(state)
-      playCategorySound('task.complete', config, state)
+      emitCategorySound('task.complete')
 
       if (config.enabled && !state.paused) {
         const project = projectName(session)
@@ -419,7 +469,7 @@ export function apply(ctx: Context): void {
       // Unexpected termination (error / aborted / blocked / max-tokens /
       // interrupted): beep the error sound and surface it in a popup.
       saveState(state)
-      playCategorySound('task.error', config, state)
+      emitCategorySound('task.error')
 
       if (config.enabled && !state.paused && config.desktop_notifications) {
         const project = projectName(session)
@@ -443,7 +493,7 @@ export function apply(ctx: Context): void {
     if (!shouldPlaySounds()) return
     if (!config.categories['resource.limit']) return
 
-    playCategorySound('resource.limit', config, state)
+    emitCategorySound('resource.limit')
 
     if (config.enabled && !state.paused && config.desktop_notifications) {
       const project = projectName(session)
@@ -543,10 +593,48 @@ export function apply(ctx: Context): void {
             return
           }
           const url = new URL(req.url ?? '/', 'http://dsh.internal')
+          if (req.method === 'GET' && url.pathname === '/peon/api/events') {
+            res.writeHead(200, {
+              'content-type': 'text/event-stream',
+              'cache-control': 'no-cache, no-transform',
+              'connection': 'keep-alive',
+            })
+            let heartbeat: ReturnType<typeof setInterval> | undefined
+            const cleanup = () => {
+              if (heartbeat !== undefined) clearInterval(heartbeat)
+              guiClients.delete(res)
+            }
+            guiClients.add(res)
+            try {
+              res.write('event: ready\ndata: {"type":"ready"}\n\n')
+            } catch {
+              cleanup()
+              return
+            }
+            heartbeat = setInterval(() => {
+              try {
+                res.write(': ping\n\n')
+              } catch {
+                cleanup()
+              }
+            }, 25_000)
+            req.on('close', cleanup)
+            res.on('close', cleanup)
+            res.on('error', cleanup)
+            return
+          }
           if (req.method === 'GET' && url.pathname.startsWith('/peon/api/audio')) {
             const rawCat = url.pathname.slice('/peon/api/audio'.length).replace(/^\//, '') || 'session.start'
-            const pack = url.searchParams.get('pack') || entry().default_pack || 'peon'
-            const sound = getPackSoundFile(pack, rawCat)
+            const requestedPack = url.searchParams.get('pack') || null
+            let sound: { file: string } | null = null
+            if (requestedPack !== null) {
+              sound = getPackSoundFile(requestedPack, rawCat)
+            } else {
+              const currentConfig = loadConfig()
+              const currentState = loadState()
+              sound = pickSound(rawCat, currentConfig, currentState)
+              if (sound !== null) saveState(currentState)
+            }
             if (!sound) {
               writeError(res, 404, 'not-found', 'sound not found')
               return

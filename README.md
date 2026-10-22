@@ -81,13 +81,17 @@ Changes are written through to `~/.config/peon-ping/config.json` immediately, so
 
 ### Where the sound actually plays
 
-A completion used to fire **twice** on a local Mac: the host process ran `afplay`, and the web GUI (packaged Chromium app **or** a Chrome tab of `127.0.0.1:3080`) also played the same clip via Web Audio. Chrome does not have its own DSH completion sound — it is the same plugin running inside that page.
+There is exactly **one sound owner per event**:
 
-| GUI | Speakers |
-|-----|----------|
-| Packaged app / Chrome / Electron on `localhost` or `127.0.0.1` | **Host only** (`afplay` / `paplay` / …). Browser autoplay is skipped so the clip is not stacked. |
-| Phone, LAN IP, cloud URL (`mac.followjack.cn`, …) | **This browser** (the host machine may still beep if it has speakers). |
+| Surface | Who plays the clip |
+|---------|--------------------|
+| Desktop app (`dsh-app://app`), Chrome/Electron on `localhost`, phone, LAN, cloud | **This GUI**, through Web Audio. The host broadcasts one `sound` event over `/peon/api/events`; the page that shows the notification is the page that plays the sound. |
+| CLI / headless (no GUI connected) | **The host process** (`afplay` / `paplay` / …). This is the only fallback. |
 | Settings → Preview | **This browser only** — the host does not also `afplay`. |
+
+The host never runs `afplay` while a GUI is connected, so a desktop app cannot stack a host clip under the renderer's clip. Desktop banners are silent: the native Electron notification sets `silent: true`, and `terminal-notifier` is invoked without `-sound`. The custom pack is the one audible part.
+
+This replaces the old `localhost` / `127.0.0.1` heuristic. The official Desktop page is `dsh-app://app` (its URL hostname is literally `app`), so hostname checks could not identify the packaged app and let the renderer play a second copy.
 
 > **Settings-page transport**: the page talks to the host through the plugin's own `/peon/api` HTTP route (same origin, behind the browser-trust fence), **not** through the host's settings-namespace allowlist (`dsh-host-apiproxy`'s `WEB_SETTINGS_NAMESPACES` admits only built-in namespaces; a third-party namespace is filtered from `settings.describe` even when registered). So the settings page works on dsh versions that never added `peon-ping` to that allowlist.
 
@@ -97,7 +101,7 @@ To install specific packs from the registry directly, edit `~/.config/peon-ping/
 
 | Platform | Player | Notifications |
 |----------|--------|---------------|
-| macOS | `afplay` (built-in) | `terminal-notifier` (click-through; falls back to `osascript`) |
+| macOS | `afplay` (CLI/headless fallback; a connected GUI uses Web Audio) | Native Electron notification when available, otherwise `terminal-notifier` — both silent |
 | Linux | `pw-play`, `paplay`, `ffplay`, `mpv`, `play`, or `aplay` (first found) | `notify-send` (desktop session required) |
 | WSL | PowerShell `MediaPlayer` — the WSL path is converted to the Windows view (`wslpath -w` → `\\wsl.localhost\<distro>\...` or `D:\...`) so the spawned Windows PowerShell can actually open the file | Windows Toast (text-only; no icon — WinRT silently drops icons from WSL paths) |
 | **Windows (native)** ⭐ | `ffplay` (recommended, `winget install Gyan.FFmpeg`) → `mpv` → `winmm.dll PlaySound` fallback (no volume control) | Custom WinForms popup (multi-monitor, no AUMID needed) |

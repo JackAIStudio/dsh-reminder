@@ -46,6 +46,7 @@ describe("task.error event handling", () => {
         },
         get: () => undefined,
         inject: () => {},
+        effect: (fn: () => unknown) => fn(),
         logger: { warn: () => {}, info: () => {}, error: () => {} },
       };
     });

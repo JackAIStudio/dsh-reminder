@@ -1,40 +1,25 @@
 /**
- * When a completion sound may play in the browser.
+ * Sound-event playback policy for the browser half.
  *
- * Local GUI (packaged Chromium app, Chrome tab, Electron window) talks to
- * `localhost` / `127.0.0.1`. The host plugin already plays through the
- * machine's speakers (`afplay` / `paplay` / …). Playing Web Audio as well
- * stacks the same clip on top of itself.
- *
- * Remote GUIs (phone via LAN/public URL, cloud web) are not the host
- * machine — those pages still need Web Audio.
+ * The host is the single source of truth for whether a category is enabled
+ * and for the chosen volume. It broadcasts one `sound` event over
+ * `/peon/api/events`; every connected GUI receives that event and plays it
+ * locally. The host process only runs `afplay` when no GUI is connected
+ * (CLI / headless), so a desktop app never stacks a host clip under the
+ * renderer's Web Audio clip.
  *
  * @module dsh-reminder/client/playback-policy
  */
-/** Same 5s window the host uses on `state.last_stop_time`. */
-export declare const CLIENT_AUTOPLAY_DEBOUNCE_MS = 5000;
-/** localStorage key shared by every same-origin tab / PWA window. */
-export declare const AUTOPLAY_STORAGE_KEY = "dsh-reminder:last-autoplay-at";
-/** True for addresses that share speakers with the dsh host process. */
-export declare function isLoopbackHostname(hostname: string | undefined | null): boolean;
-/**
- * Browser autoplay is for remote pages only. Local pages (localhost / 127.0.0.1,
- * whether in Chrome, PWA, or native JackDSH) share speakers with the host
- * process which plays via afplay/native audio.
- * Subagent composers must stay silent — the parent turn still owns the one completion sound.
- */
-export declare function clientShouldAutoPlayCompletion(input: {
-    hostname: string | undefined | null;
-    subagent?: unknown;
-    isJackDsh?: boolean;
-}): boolean;
+/** localStorage prefix for cross-tab sound-event claims. */
+export declare const SOUND_EVENT_STORAGE_PREFIX = "dsh-reminder:sound:";
+/** How long a claimed event id is kept before pruning. */
+export declare const SOUND_EVENT_CLAIM_TTL_MS = 60000;
 export declare function completionAudioUrl(category: string, now?: number): string;
 export declare function previewAudioUrl(pack: string, now?: number): string;
-/** Pick the completion vs error clip from the session snapshot. */
-export declare function completionCategoryFromSnapshot(lastAgentError: unknown): 'task.complete' | 'task.error';
-export declare function resetAutoplayClaimForTests(): void;
 /**
- * First caller within `debounceMs` wins. Same-tab listeners share the
- * in-memory lock; same-origin tabs also share localStorage.
+ * First same-origin tab to see an event id plays it; later tabs stay silent.
+ * The host sends one id per lifecycle sound, so this only dedupes duplicate
+ * deliveries (multiple tabs / a reloaded listener), never two real sounds.
  */
-export declare function claimAutoplay(now?: number, debounceMs?: number, storage?: Pick<Storage, 'getItem' | 'setItem'> | null): boolean;
+export declare function claimSoundEvent(id: string, storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'length' | 'key'> | null, now?: number): boolean;
+export declare function resetSoundEventClaimsForTests(): void;
